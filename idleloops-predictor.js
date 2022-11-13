@@ -2,7 +2,7 @@
 // @name         IdleLoops Predictor Makro
 // @namespace    https://github.com/MakroCZ/
 // @downloadURL  https://raw.githubusercontent.com/MakroCZ/IdleLoops-Predictor/master/idleloops-predictor.user.js
-// @version      2.3.4
+// @version      2.4.2
 // @description  Predicts the amount of resources spent and gained by each action in the action list. Valid as of IdleLoops v.85/Omsi6.
 // @author       Koviko <koviko.net@gmail.com>
 // @match        https://lloyd-delacroix.github.io/omsi-loops/
@@ -215,7 +215,7 @@ const Koviko = {
       const soulstoneBonus = stats[statName].soulstone ? calcSoulstoneMult(stats[statName].soulstone) : 1;
       return soulstoneBonus * (1 + Math.pow(getLevelFromTalent(t[statName]), 0.4) / 3);
     }
-  
+
   },
 
   /** A collection of attributes and a comparison of those attributes from one snapshot to the next. */
@@ -388,28 +388,42 @@ const Koviko = {
       this.initElements()
       this.initPredictions();
       this.state;
-      if(typeof localStorage !== "undefined") { 
-        if (localStorage.getItem('timePrecision') !== null) {
-          var loadedVal = localStorage.getItem('timePrecision');
-          \$('#updateTimePrecision').val(loadedVal);
+      Koviko.options={};
+      if(typeof localStorage !== "undefined") {
+        Koviko.options.timePrecision=localStorage.getItem('timePrecision');
+        if (Koviko.options.timePrecision !== null) {
+          \$('#updateTimePrecision').val(Koviko.options.timePrecision);
         }
-        if (localStorage.getItem("actionWidth")!==null) {
-          let tmpVal=localStorage.getItem("actionWidth");
-          document.getElementById("actionsColumn").style.width=tmpVal+"px";
-          document.getElementById("nextActionsListContainer").style.width=(tmpVal-120)+"px";
-          \$('#actionWidth').val(tmpVal);
+        Koviko.options.actionWidth=localStorage.getItem("actionWidth");
+        if (Koviko.options.actionWidth!==null) {
+          document.getElementById("actionsColumn").style.width=Koviko.options.actionWidth+"px";
+          document.getElementById("nextActionsListContainer").style.width=(Koviko.options.actionWidth-120)+"px";
+          \$('#actionWidth').val(Koviko.options.actionWidth);
+        }
+        Koviko.options.repeatPrediction=localStorage.getItem("repeatPrediction")=='true';
+        if (Koviko.options.repeatPrediction!==null) {
+          \$('#repeatPrediction').prop( "checked", Koviko.options.repeatPrediction);
+        }
+        let tmpVal=localStorage.getItem("trackedStat");
+        if (tmpVal && Koviko.options.trackedStat !== null) {
+          \$('#trackedStat').val(tmpVal);
+          Koviko.options.trackedStat=Koviko.trackedStats[tmpVal];
+        } else {
+          \$('#trackedStat').val('Rsoul');
+          Koviko.options.trackedStat=Koviko.trackedStats['Rsoul'];
+          localStorage.setItem('trackedStat', 'Rsoul');
         }
 
-        if (localStorage.getItem("repeatPrediction")!==null) {
-          let tmpVal=localStorage.getItem("repeatPrediction");
-          \$('#repeatPrediction').prop( "checked", tmpVal=='true' );
+        Koviko.options.slowMode=localStorage.getItem("slowMode")=='true';
+        if (Koviko.options.slowMode!==null) {
+          \$('#slowMode').prop( "checked", Koviko.options.slowMode);
         }
-        if (localStorage.getItem('trackedStat') !== null) {
-          var loadedVal = localStorage.getItem('trackedStat');
-          \$('#trackedStat').val(loadedVal);
-        } else {
-          \$('#trackedStat').val('soul');
+
+        Koviko.options.slowTimer=(localStorage.getItem('slowTimer')||1);
+        if (Koviko.options.slowTimer !== null) {
+          \$('#updateTimePrecision').val(Koviko.options.slowTimer);
         }
+
       }
       // Prepare \`updateNextActions\` to be hooked
       if (!view._updateNextActions) {
@@ -432,8 +446,12 @@ const Koviko = {
       stopGame = () => {
         _stopGame()
         view.updateNextActions();
-      };    
+      };
 
+      //Hook checkbox repeatLastActionInput with the predictor's update function
+      repeatLastActionInput.addEventListener('change',e =>{
+        view.updateNextActions();
+      });
       view.updateNextActions();
 
     }
@@ -555,52 +573,76 @@ const Koviko = {
           if(\$(this).val() < 1) {
               \$(this).val(1);
           }
-          localStorage.setItem('timePrecision', \$(this).val());
+          Koviko.options.timePrecision=\$(this).val();
+          localStorage.setItem('timePrecision', Koviko.options.timePrecision);
       });
       \$('#preditorSettings').append("<br /><label>Width of the Action List</label><input id='actionWidth' type='number' value='500' min='100' max='4000' style='width: 50px; margin-left:40px'>");
       \$('#actionWidth').focusout(function() {
-          let tmpVal=\$(this).val();
-          localStorage.setItem('actionWidth',tmpVal );       
-          document.getElementById("actionsColumn").style.width=tmpVal+"px";
-          document.getElementById("nextActionsListContainer").style.width=(tmpVal-120)+"px";
+          Koviko.options.actionWidth=\$(this).val();
+          localStorage.setItem('actionWidth',Koviko.options.actionWidth );
+          document.getElementById("actionsColumn").style.width=Koviko.options.actionWidth+"px";
+          document.getElementById("nextActionsListContainer").style.width=(Koviko.options.actionWidth-120)+"px";
       });
 
       \$('#preditorSettings').append(\`<br /><input id='repeatPrediction' type='checkbox'><label for='repeatPrediction'> "Repeat last action on list" applies to the Predictor</label>\`);
       \$('#repeatPrediction').change(function() {
-          let tmpVal=\$(this).is(':checked');
-          localStorage.setItem('repeatPrediction',tmpVal );       
+          Koviko.options.repeatPrediction=\$(this).is(':checked');
+          localStorage.setItem('repeatPrediction',Koviko.options.repeatPrediction );
       });
-
-      \$('#actionChanges').children('div:nth-child(2)').append("<select id='trackedStat' class='button'></select>");
-      \$('#trackedStat').append("<option value=Rsoul hidden=''>(R) Soulstones</option>");
-      \$('#trackedStat').append("<option value=Ract hidden=''>(R) Final Actions</option>");
-      \$('#trackedStat').append("<option value=Rsurvey hidden=''>(R) Surveys</option>");
-      for (let i in skillList) {
-        \$('#trackedStat').append("<option value=S"+skillList[i].toLowerCase()+" hidden=''>(S) "+skillList[i]+"</option>");
+      Koviko.trackedStats = [
+        {type:'R', name:'soul', display_name:'Soulstones'},
+        {type:'R', name:'soulNow', display_name:'SS Expected'},
+        {type:'R', name:'act', display_name:'Final Actions'},
+        {type:'R', name:'survey', display_name:'Surveys', hidden:()=>(getExploreSkill()==0)},
+        {type:'R', name:'invest', display_name:'Investment', hidden:()=>(goldInvested==0)},
+        {type:'TIME', name:'tillKey', display_name:'Till Key', hidden:()=>(goldInvested==0)},
+      ].reduce(
+        (dict, el, index) => (dict[el.type + el.name] = el, dict),
+        {}
+      );
+      for (const skill of skillList) {
+        Koviko.trackedStats['S'+skill.toLowerCase()] = {type:'S', name:skill.toLowerCase(), display_name:skill, hidden:()=>(!skills[skill].exp>0)}
       }
-      for (let i in statList) {
-        \$('#trackedStat').append("<option value=T"+statList[i]+" >(T) "+_txt('stats>'+statList[i]+'>long_form')+"</option>");
+      for (const stat of statList) {
+        Koviko.trackedStats['T'+stat] = {type:'T', name:stat, display_name:_txt('stats>'+stat+'>long_form')}
+      }
+      \$('#actionChanges').children('div:nth-child(2)').append("<select id='trackedStat' class='button'></select>");
+      for (const [key, stat] of Object.entries(Koviko.trackedStats)) {
+        \$('#trackedStat').append("<option value="+key+" hidden=''>("+stat.type+") "+stat.display_name+"</option>");
       }
       \$('#trackedStat').change(function() {
         let tmpVal=\$(this).val();
-        localStorage.setItem('trackedStat',tmpVal );
+        localStorage.setItem('trackedStat',tmpVal);
+        Koviko.options.trackedStat=Koviko.trackedStats[tmpVal];
         view.updateNextActions();
       });
       this.updateTrackedList();
+
+      \$('#preditorSettings').append(\`<br /><input id='slowMode' type='checkbox'><label for='slowMode'> Only update the predictor every <input id='slowTimer' type='number' value='1' min='0'style='width: 20px;'> Minutes</label>\`);
+      \$('#slowMode').change(function() {
+          Koviko.options.slowMode=\$(this).is(':checked');
+          localStorage.setItem('slowMode',Koviko.options.slowMode );
+      });
+
+      \$('#slowTimer').focusout(function() {
+          if(\$(this).val() < 1) {
+              \$(this).val(1);
+          }
+          Koviko.options.slowTimer=\$(this).val();
+          localStorage.setItem('slowTimer', Koviko.options.slowTimer);
+      });
+
+
     }
 
     updateTrackedList() {
       let statisticList = $("#trackedStat").children();
-        for (let i=0;i<statisticList.length;i++) {
-          switch(statisticList[i].value.charAt(0)) {
-            case 'R':
-              statisticList[i].hidden=((statisticList[i].value=="Rsurvey") && (getExploreSkill()==0));
-              break;
-            case 'S':
-              statisticList[i].hidden=(!skills[statisticList[i].value.charAt(1).toUpperCase()+statisticList[i].value.slice(2)].exp>0);
-              break;
-            case 'T':
-              break;
+        for (const statistic of statisticList) {
+          let trackedStat = Koviko.trackedStats[statistic.value];
+          if(trackedStat && trackedStat.hidden) {
+            statistic.hidden = trackedStat.hidden();
+          } else {
+            statistic.hidden = false;
           }
         }
     }
@@ -718,7 +760,7 @@ const Koviko = {
 
 
 
- 
+
         'RuinsZ1':{ affected:['']},
         'RuinsZ3':{ affected:['']},
         'RuinsZ5':{ affected:['']},
@@ -812,8 +854,8 @@ const Koviko = {
             let buyMana = Math.min(spendGold *  Action.BuyManaZ1.goldCost(), r.manaBought);
             r.mana+=buyMana;
             r.manaBought-=buyMana;
-            r.gold-=spendGold; 
-          } else { 
+            r.gold-=spendGold;
+          } else {
             r.mana += r.gold *  Action.BuyManaZ1.goldCost();
             r.gold = 0;
         }}},
@@ -832,7 +874,7 @@ const Koviko = {
           r.rep += r.temp4 <= towns[0].goodLQuests ? 1 : 0;
         }},
         'Throw Party':{ affected:['rep'],
-          canStart:true,
+          canStart:(input)=>(input.rep>=2),
           effect:(r,k) => r.rep-=2},
         'Warrior Lessons':{ affected:[''],
           canStart:(input) => input.rep >= 2,
@@ -861,7 +903,12 @@ const Koviko = {
 
             return floor in  dungeons[a.dungeonNum] ? (h.getSelfCombat(r, k) +  getSkillLevelFromExp(k.magic)) * h.getStatProgress(p, a, s, offset) * Math.sqrt(1 +  dungeons[a.dungeonNum][floor].completed / 200) : 0;
           },
-          effect:{ end:(r, k) => (k.combat += 5*(1+getBuffLevel("Heroism") * 0.02), k.magic += 5), loop:(r) => r.soul+=h.getRewardSS(0)}
+          effect:{ end:(r, k) => (k.combat += 5*(1+getBuffLevel("Heroism") * 0.02), k.magic += 5), loop:(r) => {
+            let ssGained = h.getRewardSS(0);
+            r.completionsSmallDungeon = (r.completionsSmallDungeon || 0) + 1;
+            r.soul += ssGained;
+            r.expectedSS += ssGained * dungeons[0][r.completionsSmallDungeon - 1].ssChance;
+          }}
         }},
         'Buy Supplies':{ affected:['gold'],
           canStart:(input) => input.gold >= 300 - Math.max((input.supplyDiscount || 0) * 20, 0),
@@ -914,7 +961,7 @@ const Koviko = {
         'Dark Magic':{ affected:['rep'],
           canStart:(input) => (input.rep <= 0),
           effect:(r, k) => (r.rep--, k.dark += Math.floor(100 * (1 + buffs.Ritual.amt / 100)))},
-        'Dark Ritual':{ affected:['ritual'],
+        'Dark Ritual':{ affected:['ritual','soul'],
           canStart:(input) => (input.rep <= -5), loop: {
           max:() => 1,
           cost:(p) => segment => 1000000 * (segment * 2 + 1),
@@ -923,7 +970,12 @@ const Koviko = {
 
             return attempt < 1 ? ( getSkillLevelFromExp(k.dark) * h.getStatProgress(p, a, s, offset)) / (1 - towns[1].getLevel("Witch") * .005) : 0;
           },
-          effect:{loop:(r) => r.ritual++}
+          effect:{loop:(r) => {
+            r.ritual++;
+            let ssCost = Action.DarkRitual.goldCost();
+            r.nonDungeonSS -= ssCost;
+            r.soul -= ssCost;
+          }}
         }},
         'Continue On':{ affected:[''],
           effect:(r) => r.town = 2},
@@ -960,7 +1012,12 @@ const Koviko = {
             let floor = Math.floor(p.completed / a.segments + .0000001);
             return floor in  dungeons[a.dungeonNum] ? (h.getTeamCombat(r, k) +  getSkillLevelFromExp(k.magic)) * h.getStatProgress(p, a, s, offset) * Math.sqrt(1 +  dungeons[a.dungeonNum][floor].completed / 200) : 0;
           },
-          effect:{ end:(r, k) => (k.combat += 15*(1+getBuffLevel("Heroism") * 0.02), k.magic += 15), loop:(r) => r.soul +=h.getRewardSS(1)}
+          effect:{ end:(r, k) => (k.combat += 15*(1+getBuffLevel("Heroism") * 0.02), k.magic += 15), loop:(r) => {
+            let ssGained = h.getRewardSS(1);
+            r.completionsLargeDungeon = (r.completionsLargeDungeon || 0) + 1;
+            r.soul += ssGained;
+            r.expectedSS += ssGained * dungeons[1][r.completionsLargeDungeon - 1].ssChance;
+          }}
         }},
         'Crafting Guild':{ affected:['gold','crafts'],
           canStart:(input) => (input.guild==''), loop: {
@@ -1021,7 +1078,7 @@ const Koviko = {
           effect:(r) => {
           r.temp10 = (r.temp10 || 0) + 1;
           let ssGained = r.temp10 <= towns[3].goodMineSoulstones ? h.getRewardSS(0) : 0;
-          r.nonDungeonSS = (r.nonDungeonSS || 0) + ssGained;
+          r.nonDungeonSS += ssGained;
           r.soul += ssGained;
         }},
         'Hunt Trolls':{ affected:['blood'], loop: {
@@ -1035,7 +1092,7 @@ const Koviko = {
           r.temp11 = (r.temp11 || 0) + 1;
           r.artifacts += r.temp11 <= towns[3].goodArtifacts ? 1 : 0;
         }},
-        'Imbue Mind':{ affected:['mind'],
+        'Imbue Mind':{ affected:['mind','soul'],
           canStart:true, loop: {
           max:() => 1,
           cost:(p) => segment => 100000000 * (segment * 5 + 1),
@@ -1044,7 +1101,12 @@ const Koviko = {
 
             return attempt < 1 ? ( getSkillLevelFromExp(k.magic) * h.getStatProgress(p, a, s, offset)) : 0;
           },
-          effect:{loop:(r) => r.mind++}
+          effect:{loop:(r) => {
+            r.mind++;
+            let ssCost = Action.ImbueMind.goldCost();
+            r.nonDungeonSS -= ssCost;
+            r.soul -= ssCost;
+          }}
         }},
         'Imbue Body':{ affected:['body'],
           canStart:true, loop: {
@@ -1165,14 +1227,19 @@ const Koviko = {
           r.favor -= 20;
           r.pegasus = true;
         }},
-        'Great Feast':{ affected:['feast'],
+        'Great Feast':{ affected:['feast','soul'],
           canStart:(input) => (input.rep >= 100), loop: {
           max:() => 1,
           cost:(p) => segment => 1000000000 * (segment * 5 + 1),
           tick:(p, a, s, k) => offset => {
             return  getSkillLevelFromExp(k.practical) * h.getStatProgress(p, a, s, offset);
           },
-          effect:{loop:(r) => r.feast++}
+          effect:{loop:(r) => {
+            r.feast++;
+            let ssCost = Action.GreatFeast.goldCost();
+            r.nonDungeonSS -= ssCost;
+            r.soul -= ssCost;
+          }}
         }},
         'Fight Frost Giants':{ affected:['giants'],
           canStart:(input) => (input.pegasus), loop: {
@@ -1231,7 +1298,12 @@ const Koviko = {
                 h.getStatProgress(p, a, s, offset) *
                 Math.sqrt(1 +  dungeons[a.dungeonNum][floor].completed / 200) : 0;
           },
-          effect:{ end:(r,k) => {(k.combat += 100*(1+getBuffLevel("Heroism") * 0.02))}, loop:(r) => r.soul += h.getRewardSS(2)}
+          effect:{ end:(r,k) => {(k.combat += 100*(1+getBuffLevel("Heroism") * 0.02))}, loop:(r) => {
+            let ssGained = h.getRewardSS(2);
+            r.completionsTheSpire = (r.completionsTheSpire || 0) + 1;
+            r.soul += ssGained;
+            r.expectedSS += ssGained * dungeons[2][r.completionsTheSpire - 1].ssChance;
+          }}
         }},
         'Purchase Supplies':{ affected:['gold'],
           canStart:(input) => (input.gold >= 500 && !input.supplies),
@@ -1339,6 +1411,7 @@ const Koviko = {
           canStart:(input)=>(input.gold>0),
           effect:(r,k)=> {
            k.mercantilism+=100;
+           r.invested=r.gold;
            r.gold=0;
         }},
         'Collect Interest':{ affected:['gold'],
@@ -1458,7 +1531,7 @@ const Koviko = {
           this.predictions["Secret Trial"].updateTicks= (a, s, state) => {
             if (!state.currProgress["Secret Trial"]) {
               return this.predictions["Secret Trial"]._updateTicks(a, s, state);
-            } 
+            }
             return this._ticks;
           }
         }
@@ -1466,7 +1539,7 @@ const Koviko = {
     }
 
     /**
-     * Fires before the main action list update, stores the current list to reduce flickering while updating. 
+     * Fires before the main action list update, stores the current list to reduce flickering while updating.
      * @param {HTMLElement} [container] Parent element of the action list
      */
     preUpdate(container) {
@@ -1497,21 +1570,38 @@ const Koviko = {
        * Organize accumulated resources, accumulated stats, and accumulated progress into a single object
        * @var {Koviko.Predictor~State}
        */
-      let state = {
-        resources: { mana: 250, town: 0, guild: "", totalTicks: 0 },
-        stats: Koviko.globals.statList.reduce((stats, name) => (stats[name] = getExpOfLevel(buffs.Imbuement2.amt*(Koviko.globals.skills.Wunderkind.exp>=100?2:1)), stats), {}),
-        talents:  Koviko.globals.statList.reduce((talents, name) => (talents[name] = stats[name].talent, talents), {}),
-        skills: Object.entries(Koviko.globals.skills).reduce((skills, x) => (skills[x[0].toLowerCase()] = x[1].exp, skills), {}),
-        progress: {},
-        currProgress: {}
-      };
+      let state;
 
+      //"Slowmode means only update the initial state every X Minutes
+      if(Koviko.options.slowMode) {
+        if (this.initState && (new Date()<this.nextUpdate)) {
+          state=structuredClone(this.initState);
+          //console.log("Slowmode - Redraw");
+        } else {
+          this.nextUpdate=new Date(Date.now()+ Koviko.options.slowTimer*1000*60);
+          //console.log("Slowmode - Update Data");
+        }
+      }
+
+      if (!state) {
+        state = {
+          resources: { mana: 250, town: 0, guild: "", totalTicks: 0 },
+          stats: Koviko.globals.statList.reduce((stats, name) => (stats[name] = getExpOfLevel(buffs.Imbuement2.amt*(Koviko.globals.skills.Wunderkind.exp>=100?2:1)), stats), {}),
+          talents:  Koviko.globals.statList.reduce((talents, name) => (talents[name] = stats[name].talent, talents), {}),
+          skills: Object.entries(Koviko.globals.skills).reduce((skills, x) => (skills[x[0].toLowerCase()] = x[1].exp, skills), {}),
+          progress: {},
+          currProgress: {}
+        };
+        if (Koviko.options.slowMode) {
+          this.initState=structuredClone(state);
+        }
+      }
       //Once you Surveyed everything you get free Glasses [Found Glasses]
       if(getExploreProgress() >= 100) {
         state.resources.glasses=true;
       }
 
-      //Challenge Mode 
+      //Challenge Mode
         if ((typeof challengeSave!="undefined")&&(challengeSave.challengeMode==1)) {
           state.resources.isManaDrought=true;
           state.resources.manaBought=7500;
@@ -1543,34 +1633,32 @@ const Koviko = {
        * @var {Array.<string>}
        */
       const affected = Object.keys(actions.reduce((stats, x) => (x.name in this.predictions && this.predictions[x.name].affected || []).reduce((stats, name) => (stats[name] = true, stats), stats), {}));
-      
+
       // Reset the cache's index
       // returns false on cache miss
       let cache = this.cache.reset([state, affected]);
 
-      /**
-       *This is used to see when the loop becomes invalid due to mana cost
-       */
-      //This is the precision of the Time field
-      let precisionForTime = \$('#updateTimePrecision').val();
-      const repeatLast = \$('#repeatPrediction').is(':checked');
 
       //Statistik parammeters
-      let statisticType=(\$('#trackedStat').val()||"Rsoul");
       let statisticStart=0;
-      switch(statisticType.charAt(0)) {
+      let newStatisticValue=0;
+      switch(Koviko.options.trackedStat.type) {
         case 'R':
           break;
         case 'S':
-          statisticStart=state.skills[statisticType.slice(1)];
+          statisticStart=state.skills[Koviko.options.trackedStat.name];
           break;
         case 'T':
-          statisticStart=state.talents[statisticType.slice(1)];
+          statisticStart=state.talents[Koviko.options.trackedStat.name];
           break;
       }
 
       // Initialize all affected resources
       affected.forEach(x => state.resources[x] || (state.resources[x] = 0));
+      if (affected.includes('soul')) {
+        state.resources.nonDungeonSS = (state.resources.nonDungeonSS || 0)
+        state.resources.expectedSS = (state.resources.expectedSS || 0)
+      }
 
       // Initialize the display element for the total amount of mana used
       if(container){
@@ -1583,7 +1671,7 @@ const Koviko = {
       let isValid;
       let loop;
 
-      // If id != update.id, then another update was triggered and we need to stop processing this one 
+      // If id != update.id, then another update was triggered and we need to stop processing this one
       let id = {};
       this.update.id = id;
 
@@ -1600,10 +1688,10 @@ const Koviko = {
           cache = this.cache.next([listedAction.name, listedAction.loops, listedAction.disabled]);
           if(cache) {
             [state, total, isValid] = cache
-            
+
           }
         }
-        
+
         /** @var {Koviko.Prediction} */
         let prediction = this.predictions[listedAction.name];
 
@@ -1614,8 +1702,8 @@ const Koviko = {
            */
           let div = container ? container.children[i] : null;
 
-          let repeatLoop = repeatLast && options.repeatLastAction && (i == finalIndex) && (prediction.action.allowed==undefined);
-          
+          let repeatLoop = Koviko.options.repeatPrediction && options.repeatLastAction && (i == finalIndex) && (prediction.action.allowed==undefined);
+
           if(!cache || i == finalIndex) {
             // Reinitialise variables on cache miss
             isValid = (prediction.action.townNum==state.resources.town);
@@ -1635,7 +1723,7 @@ const Koviko = {
 
             state.resources.actionTicks=0;
 
-            // Complicated mess of ifs to use the cache for 90% of the last action 
+            // Complicated mess of ifs to use the cache for 90% of the last action
 
             if(i == finalIndex && cache){
               let key = [listedAction.name, listedAction.disabled];
@@ -1658,82 +1746,83 @@ const Koviko = {
             }
 
             // Predict each loop in sequence
-            for (loop; repeatLoop ? isValid : loop < listedAction.loops; loop++) {
-              let canStart = typeof(prediction.canStart) === "function" ? prediction.canStart(state.resources) : prediction.canStart;
-              if (!canStart) { isValid = false; }
-              if ( !canStart || listedAction.disabled ) { break; }
-
-              // Save the mana prior to the prediction
-              currentMana = state.resources.mana;
-
-              // Skip EXP calculations for the last element, when no longer necessary (only costs 1 mana)
-              if ((i==finalIndex) && (prediction.ticks()==1) &&(!prediction.loop) &&(loop>0)) {
-                state.resources.mana--;
-              } else if (prediction.loop && prediction.loop.max &&((prediction.loop.max(prediction.action)*prediction.action.segments)<=state.progress[prediction.name].completed)) {
-                break;
-              } else {
-                // Run the prediction
-                this.predict(prediction, state);
-              }
-
-              // Check if the amount of mana used was too much
-              isValid = isValid && state.resources.mana >= 0;
-
-              // Only for Adventure Guild
-              if ( listedAction.name == "Adventure Guild" ) {
-                state.resources.mana -= state.resources.adventures * 200;
-              }
-
-              // Calculate the total amount of mana used in the prediction and add it to the total
-              total += currentMana - state.resources.mana;
-
-
-
-              // Calculate time spent
-              let temp = (currentMana - state.resources.mana) / getSpeedMult(state.resources.town);
-              state.resources.totalTicks += temp;
-              state.resources.actionTicks+=temp;
-
-              // Only for Adventure Guild
-              if ( listedAction.name == "Adventure Guild" ) {
-                state.resources.mana += state.resources.adventures * 200;
-              }
-              
-              if (repeatLoop&& !isValid) {break;}
-
-              // Run the effect, now that the mana checks are complete
-              if (prediction.effect) {
-                prediction.effect(state.resources, state.skills);
-              }
-              if (prediction.loop) {
-                if (prediction.loop.effect.end) {
-                  prediction.loop.effect.end(state.resources, state.skills);
+            if (isValid) {
+              for (loop; repeatLoop ? isValid : loop < listedAction.loops; loop++) {
+                let canStart = typeof(prediction.canStart) === "function" ? prediction.canStart(state.resources) : prediction.canStart;
+                if (!canStart) { isValid = false; }
+                if ( !canStart || listedAction.disabled ) { break; }
+			
+                // Save the mana prior to the prediction
+                currentMana = state.resources.mana;
+			
+                // Skip EXP calculations for the last element, when no longer necessary (only costs 1 mana)
+                if ((i==finalIndex) && (prediction.ticks()==1) &&(!prediction.loop) &&(loop>0)) {
+                  state.resources.mana--;
+                } else if (prediction.loop && prediction.loop.max &&((prediction.loop.max(prediction.action)*prediction.action.segments)<=state.progress[prediction.name].completed)) {
+                  break;
+                } else {
+                  // Run the prediction
+                  this.predict(prediction, state);
+                }
+			
+                // Check if the amount of mana used was too much
+                isValid = isValid && state.resources.mana >= 0;
+			
+                // Only for Adventure Guild
+                if ( listedAction.name == "Adventure Guild" ) {
+                  state.resources.mana -= state.resources.adventures * 200;
+                }
+			
+                // Calculate the total amount of mana used in the prediction and add it to the total
+                total += currentMana - state.resources.mana;
+			
+			
+			
+                // Calculate time spent
+                let temp = (currentMana - state.resources.mana) / getSpeedMult(state.resources.town);
+                state.resources.totalTicks += temp;
+                state.resources.actionTicks+=temp;
+			
+                // Only for Adventure Guild
+                if ( listedAction.name == "Adventure Guild" ) {
+                  state.resources.mana += state.resources.adventures * 200;
+                }
+			
+                if (repeatLoop&& !isValid) {break;}
+			
+                // Run the effect, now that the mana checks are complete
+                if (prediction.effect) {
+                  prediction.effect(state.resources, state.skills);
+                }
+                if (prediction.loop) {
+                  if (prediction.loop.effect.end) {
+                    prediction.loop.effect.end(state.resources, state.skills);
+                  }
+                }
+			
+                // Add to cache 90% through the final action
+                if(i==finalIndex && loop === Math.floor(listedAction.loops * 0.9)){
+                  let key = [listedAction.name, listedAction.disabled];
+                  key['last'] = true;
+                  this.cache.add(key, [state, loop + 1, total, isValid]);
+                }
+			
+                // Sleep every 100ms to avoid hanging the game
+                if(Date.now() % 100 === 0){
+                  await new Promise(r => setTimeout(r, 1));
+			
+                  // If id != update.id, then another update was triggered and we need to stop processing this one
+                  if(id != this.update.id) {
+                    return;
+                  }
                 }
               }
-
-              // Add to cache 90% through the final action
-              if(i==finalIndex && loop === Math.floor(listedAction.loops * 0.9)){
-                let key = [listedAction.name, listedAction.disabled];
-                key['last'] = true;
-                this.cache.add(key, [state, loop + 1, total, isValid]);
-              }
-
-              // Sleep every 100ms to avoid hanging the game
-              if(Date.now() % 100 === 0){
-                await new Promise(r => setTimeout(r, 1));
-
-                // If id != update.id, then another update was triggered and we need to stop processing this one
-                if(id != this.update.id) {
-                  return;
-                }
-              } 
-
             }
 
             if (repeatLoop&& loop>=listedAction.loops) {
               isValid=true;
             }
-  
+
 
             if(prediction.name in state.progress)
               state.currProgress[prediction.name] = state.progress[prediction.name].completed / prediction.action.segments;
@@ -1755,60 +1844,83 @@ const Koviko = {
             }
             div.className += ' showthat';
             div.innerHTML += this.template(listedAction.name, affected, state.resources, snapshots, isValid);
-          }          
+          }
         }
       }
 
-      // Update the display for the total amount of mana used by the action list
-      let totalTicks = state.resources.totalTicks
-      totalTicks /= 50;
-      var h = Math.floor(totalTicks / 3600);
-      var m = Math.floor(totalTicks % 3600 / 60);
-      var s = Math.floor(totalTicks % 3600 % 60);
-      var ms = Math.floor(totalTicks % 1 * Math.pow(10,precisionForTime));
-      while(ms.toString().length < precisionForTime) { ms = "0" + ms; }
+      let totalMinutes = state.resources.totalTicks / 50 / 60
 
-      let totalTime = ('0' + h).slice(-2) + ":" + ('0' + m).slice(-2) + ":" + ('0' + s).slice(-2) + "." + ms;
-
-      let newStatisticValue=0;
       let legend="";
 
-      switch(statisticType.charAt(0)) {
+      switch(Koviko.options.trackedStat.type) {
         case 'R':
-          if (statisticType=="Rsoul") {
+          if (Koviko.options.trackedStat.name=="soul") {
             let dungeonEquilibrium = Math.min(Math.sqrt(total / 200000),1);
-            let dungeonSS = state.resources.soul - (state.resources.nonDungeonSS || 0);
-            newStatisticValue = ((state.resources.nonDungeonSS || 0) + dungeonEquilibrium * (dungeonSS || 0)) / totalTicks * 60;
+            let dungeonSS = state.resources.soul - state.resources.nonDungeonSS;
+            newStatisticValue = (state.resources.nonDungeonSS + dungeonEquilibrium * (dungeonSS || 0)) / totalMinutes;
             legend="SS";
-          } else if (statisticType=="Ract") {
-            newStatisticValue= loop / totalTicks * 60;
+          } else if (Koviko.options.trackedStat.name=="soulNow") {
+            newStatisticValue = (state.resources.expectedSS+state.resources.nonDungeonSS) / totalMinutes;
+            legend="SS Expected";
+          } else if (Koviko.options.trackedStat.name=="act") {
+            newStatisticValue= loop / totalMinutes;
             legend=actions[finalIndex].name;
-          } else if (statisticType=="Rsurvey") {
-            newStatisticValue= getExploreSkill()* (state.resources.completedMap+2*state.resources.submittedMap)  / totalTicks * 60;
+          } else if (Koviko.options.trackedStat.name=="survey") {
+            newStatisticValue= getExploreSkill()* (state.resources.completedMap+3*state.resources.submittedMap)  / totalMinutes;
             legend="Survey";
+          } else if (Koviko.options.trackedStat.name=="invest") {
+            newStatisticValue= state.resources.invested / totalMinutes;
+            legend="Investment";
+          }
+          break;
+        case 'TIME':
+          if (Koviko.options.trackedStat.name=="tillKey") {
+            let goldTillKey = 1000000;
+            let i_rate = 0.001;
+            // This is a re-arranged 'compound interest with contributions' formula solving for the number of iterations
+            // required to reach \`goldTillKey / i_rate\`, when you can collect enough gold from interest.
+            // The actual implementation rounds your interest each loop, so this is slightly innacurate.
+            let loopsNeeded = Math.log((goldTillKey + state.resources.invested)/(goldInvested*i_rate + state.resources.invested))/Math.log(i_rate + 1);
+            newStatisticValue= loopsNeeded * state.resources.totalTicks; // Estimate of total ticks until we can buy the key
+            legend="till key";
           }
           break;
         case 'S':
-          newStatisticValue=(state.skills[statisticType.slice(1)]-statisticStart)/ totalTicks * 60;
-          legend=this.getShortSkill(statisticType.slice(1));
+          newStatisticValue=(state.skills[Koviko.options.trackedStat.name]-statisticStart)/ totalMinutes;
+          legend=this.getShortSkill(Koviko.options.trackedStat.name);
           break;
         case 'T':
-          newStatisticValue=(state.talents[statisticType.slice(1)]-statisticStart)/ totalTicks * 60;
-          legend=_txt('stats>'+statisticType.slice(1)+'>short_form');
+          newStatisticValue=(state.talents[Koviko.options.trackedStat.name]-statisticStart)/ totalMinutes;
+          legend=_txt('stats>'+Koviko.options.trackedStat.name+'>short_form');
           break;
       }
 
 
-      container && (this.totalDisplay.innerHTML = intToString(total) + " | " + totalTime + " | " );
-      container && (this.statisticDisplay.innerHTML = intToString(newStatisticValue||0) +" "+legend+ "/min");
+      // Update the display for the total amount of mana used by the action list
+      container && (this.totalDisplay.innerHTML = intToString(total) + " | " + this.timeString(state.resources.totalTicks) + " | " );
+      switch(Koviko.options.trackedStat.type) {
+        case 'TIME':
+          container && (this.statisticDisplay.innerHTML = this.timeString(newStatisticValue||0) + " " + legend);
+          break;
+        default:
+          container && (this.statisticDisplay.innerHTML = intToString(newStatisticValue||0) + " " + legend + "/min");
+      }
+
       if (this.resourcePerMinute>newStatisticValue) {
         this.statisticDisplay.style='color: #FF0000';
       } else {
         this.statisticDisplay.style='color: #8293ff'
       }
      this.resourcePerMinute=newStatisticValue;
-     
+
      this.totalDisplay.parentElement.classList.remove('expired');
+
+      if (getNumOnCurList("Open Portal")>0 && (getNumOnList("Open Portal")==0)) {
+        this.totalDisplay.innerHTML +="PORTAL MISSING";
+        this.totalDisplay.style.color="#ff00ff";
+      } else {
+        this.totalDisplay.style.color="";
+      }
 
       // Log useful debugging data
       if (isDebug) {
@@ -1823,6 +1935,17 @@ const Koviko = {
 
       // Fire an event when a prediction finishes for other scripts to hook into
       document.dispatchEvent(new Event('predictor-update'));
+    }
+
+    timeString(ticks) {
+      let seconds = ticks / 50;
+      let h = Math.floor(seconds / 3600);
+      let m = Math.floor(seconds % 3600 / 60);
+      let s = Math.floor(seconds % 3600 % 60);
+      let ms = Math.floor(seconds % 1 * Math.pow(10,Koviko.options.timePrecision));
+      while(ms.toString().length < Koviko.options.timePrecision) { ms = "0" + ms; }
+
+      return ('0' + h).slice(-2) + ":" + ('0' + m).slice(-2) + ":" + ('0' + s).slice(-2) + "." + ms;
     }
 
     getShortSkill(name) {
@@ -1903,7 +2026,11 @@ const Koviko = {
 
           tooltip += '<tr><td><b>'
           tooltip+=this.getShortSkill(i);
-          tooltip += '</b></td><td>' + intToString(level.end, 1) + '</td><td>(+' + intToString(level.end - level.start, 1) + ')</td></tr>';
+          if (level.end>level.start) {
+            tooltip += '</b></td><td>' + intToString(level.end, 1) + '</td><td>(+' + intToString(level.end - level.start, 1) + ')</td></tr>';
+          } else {
+            tooltip += '<td>' +Math.floor(skills[i].delta/(level.end+1)*100)/100 +'%</td><td><' + intToString(skills[i].delta, 1) + '></td></tr>';
+          }
         }
       }
 
@@ -1967,7 +2094,7 @@ const Koviko = {
           tooltip += '</b></td><td>' + intToString(level.end, 1) + '</td><td>(+' + intToString(level.end - level.start, 1) + ')</td></tr>';
         }
       }
-      //Timer 
+      //Timer
       tooltip+= '<tr><td><b>TIME</b></td><td>' + precision3(resources.totalTicks/50, 1) + '</td><td>(+' + precision3(resources.actionTicks/50, 1) + ')</td></tr>';
 
       var Affec = affected.map(name => {
